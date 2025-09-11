@@ -125,11 +125,19 @@ def sync(config, state, catalog):
                         #Don't bring over voided shipments unless looking for void explicitly
                         if query_date_type != 'void':
                             params['void'] = False
-                    pages = client.paginate(stream_id, params)
-                    for page in pages:
-                        for record in page:
-                            transformed = singer.transform(record, stream_schema.to_dict())
-                            singer.write_record(stream_id, transformed)
+                    # CUSTOM FIX: Added try/catch around pagination to handle errors gracefully
+                    # ORIGINAL CODE: No error handling , bc i think it wwould crash the entire pipeline on any error
+                    try:
+                        pages = client.paginate(stream_id, params)
+                        for page in pages:
+                            for record in page:
+                                transformed = singer.transform(record, stream_schema.to_dict())
+                                singer.write_record(stream_id, transformed)
+                    except Exception as e:
+                        # CUSTOM FIX: Log error details and continue instead of crashing
+                        LOGGER.error('Error processing stream %s with params %s: %s', stream_id, params, str(e))
+                        # Continue to next query instead of crashing
+                        continue
 
                 #Write state at end of daily loop for stream
                 state = singer.write_bookmark(
