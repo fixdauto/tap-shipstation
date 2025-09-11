@@ -1,13 +1,16 @@
-# CUSTOM PLUGIN: ShipStation Client with Error Handling
+# CUSTOM PLUGIN: ShipStation Client with v2 API Support
 #
-# MAIN FIXES:
-#   1. Added try/catch around response.json() to handle HTML error responses 
-#   2. Added logging when JSON parsing fails
-#   3. Added specific 401/403 error handling with clear messages
-#   4. Added response content logging for debugging
+# MAJOR CHANGES FOR API v2:
+# 1. Updated to use ShipStation API v2 (api.shipstation.com/v2/)
+# 2. Changed from Basic Auth to API-Key header authentication
+#3. Updated configuration to use single api_key instead of key+secret
+#4. Kept all error handling improvements from v1 fix
 #
-# The original client.py crashed at line 32: response_json = response.json()
-# when the API returned "401 Unauthorized" as plain text instead of JSON
+# ERROR HANDLING FIXES (from v1):
+#1. Added try/catch around response.json() to handle HTML error responses 
+#2. Added logging when JSON parsing fails
+#3. Added specific 401/403 error handling with clear messages
+# 4. Added response content logging for debugging
 
 import time
 import requests
@@ -16,7 +19,7 @@ import singer
 import json
 
 LOGGER = singer.get_logger()
-BASE_URL = 'https://ssapi.shipstation.com/'
+BASE_URL = 'https://api.shipstation.com/v2/'  # V2 API URL
 PAGE_SIZE = 100
 
 def prepare_datetime(dt):
@@ -27,13 +30,23 @@ def prepare_datetime(dt):
 
 class ShipStationClient:
     def __init__(self, config):
-        self.username = config['api_key']
-        self.password = config['api_secret']
+        # V2 API uses single API key instead of username/password
+        self.api_key = config['api_key']
+        # Keep api_secret for backward compatibility, but v2 only needs api_key
+        if 'api_secret' in config:
+            LOGGER.warning("V2 API detected - api_secret parameter is ignored, only api_key is used")
 
     def make_request(self, url, params):
         LOGGER.info('Making request to %s with query parameters %s', url, params)
         params['pageSize'] = PAGE_SIZE
-        response = requests.get(url, params=params, auth=(self.username, self.password))
+        
+        # V2 API uses API-Key header instead of Basic Auth
+        headers = {
+            'API-Key': self.api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.get(url, params=params, headers=headers)
         return response
 
     def paginate(self, endpoint, params):

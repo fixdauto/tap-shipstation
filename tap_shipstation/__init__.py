@@ -9,7 +9,7 @@ from singer import utils, metadata
 from .client import ShipStationClient
 from .client import prepare_datetime
 
-REQUIRED_CONFIG_KEYS = ['api_key', 'api_secret', 'default_start_datetime']
+REQUIRED_CONFIG_KEYS = ['api_key', 'default_start_datetime']
 LOGGER = singer.get_logger()
 
 def get_abs_path(path):
@@ -125,6 +125,7 @@ def sync(config, state, catalog):
                         #Don't bring over voided shipments unless looking for void explicitly
                         if query_date_type != 'void':
                             params['void'] = False
+                    
                     # CUSTOM FIX: Added try/catch around pagination to handle errors gracefully
                     # ORIGINAL CODE: No error handling , bc i think it wwould crash the entire pipeline on any error
                     try:
