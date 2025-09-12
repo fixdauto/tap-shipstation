@@ -103,10 +103,7 @@ def sync(config, state, catalog):
 
             stream_end_at = pendulum.now('America/Los_Angeles')
 
-            stream_date_types = {
-                'orders' : ['modify'],
-                'shipments' : ['create','void']
-            }
+            # V2 API: Simplified - no need for multiple date query types
 
             end_at = start_at
             while end_at < stream_end_at:
@@ -114,31 +111,32 @@ def sync(config, state, catalog):
                 end_at += timedelta(days=1)
                 if end_at > stream_end_at:
                     end_at = stream_end_at
-                #For endpoints requiring multiple queries, cycle through timestamps
-                for query_date_type in stream_date_types[stream_id]:
+                # V2 API: Focus on shipments only with modified_at parameters
+                if stream_id == 'shipments':
                     params = {
-                        query_date_type + 'DateStart': prepare_datetime(start_at),
-                        query_date_type + 'DateEnd': prepare_datetime(end_at),
-                        'page': 1}
-                    if stream_id == 'shipments':
-                        params['includeShipmentItems'] = True
-                        #Don't bring over voided shipments unless looking for void explicitly
-                        if query_date_type != 'void':
-                            params['void'] = False
-                    
-                    # CUSTOM FIX: Added try/catch around pagination to handle errors gracefully
-                    # ORIGINAL CODE: No error handling , bc i think it wwould crash the entire pipeline on any error
-                    try:
-                        pages = client.paginate(stream_id, params)
-                        for page in pages:
-                            for record in page:
-                                transformed = singer.transform(record, stream_schema.to_dict())
-                                singer.write_record(stream_id, transformed)
-                    except Exception as e:
-                        # CUSTOM FIX: Log error details and continue instead of crashing
-                        LOGGER.error('Error processing stream %s with params %s: %s', stream_id, params, str(e))
-                        # Continue to next query instead of crashing
-                        continue
+                        'modified_at_start': start_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                        'modified_at_end': end_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                        'page': 1,
+                        'sort_by': 'modified_at'
+                    }
+                else:
+                    # Skip non-shipment streams for v2 API focus
+                    LOGGER.info('Skipping stream %s - focusing on shipments only for v2', stream_id)
+                    continue
+                
+                # CUSTOM FIX: Added try/catch around pagination to handle errors gracefully
+                # ORIGINAL CODE: No error handling - would crash the entire pipeline on any error
+                try:
+                    pages = client.paginate(stream_id, params)
+                    for page in pages:
+                        for record in page:
+                            transformed = singer.transform(record, stream_schema.to_dict())
+                            singer.write_record(stream_id, transformed)
+                except Exception as e:
+                    # CUSTOM FIX: Log error details and continue instead of crashing
+                    LOGGER.error('Error processing stream %s with params %s: %s', stream_id, params, str(e))
+                    # Continue to next query instead of crashing
+                    continue
 
                 #Write state at end of daily loop for stream
                 state = singer.write_bookmark(

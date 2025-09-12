@@ -38,11 +38,11 @@ class ShipStationClient:
 
     def make_request(self, url, params):
         LOGGER.info('Making request to %s with query parameters %s', url, params)
-        params['pageSize'] = PAGE_SIZE
+        params['page_size'] = PAGE_SIZE  # V2 API uses page_size instead of pageSize
         
-        # V2 API uses API-Key header instead of Basic Auth
+        # V2 API uses api-key header (lowercase with hyphen)
         headers = {
-            'API-Key': self.api_key,
+            'api-key': self.api_key,
             'Content-Type': 'application/json'
         }
         
