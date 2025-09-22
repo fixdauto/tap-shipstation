@@ -6,9 +6,15 @@ from datetime import timedelta
 import pendulum
 import singer
 from singer import utils, metadata
+from singer.catalog import Catalog
 from .client import ShipStationClient
 from .client import prepare_datetime
 
+# Auth options:
+# - Header-based (default): send API key in headers ("api-key" and "SS-API-KEY").
+# - Basic Auth (optional): if "api_secret" is provided or "auth_mode" is set to "basic",
+#   use Basic Auth with (api_key, api_secret).
+# Minimal required keys:
 REQUIRED_CONFIG_KEYS = ['api_key', 'default_start_datetime']
 LOGGER = singer.get_logger()
 
@@ -77,6 +83,9 @@ def get_selected_streams(catalog):
     return selected_streams
 
 def sync(config, state, catalog):
+    # Accept either a Singer Catalog or a plain dict from discover()
+    if isinstance(catalog, dict):
+        catalog = Catalog.from_dict(catalog)
     selected_stream_ids = get_selected_streams(catalog)
 
     # Loop over streams in catalog
@@ -102,6 +111,12 @@ def sync(config, state, catalog):
                 start_at = pendulum.parse(config['default_start_datetime'], tz='America/Los_Angeles')
 
             stream_end_at = pendulum.now('America/Los_Angeles')
+            # Testing Here: If SHIPSTATION_TEST_ONE_DAY=true, limit to a single day window for quick validation
+            if os.getenv('SHIPSTATION_TEST_ONE_DAY', 'false').lower() == 'true':
+                test_end = start_at + timedelta(days=1)
+                if test_end < stream_end_at:
+                    stream_end_at = test_end
+                LOGGER.info('SHIPSTATION_TEST_ONE_DAY enabled; limiting stream_end_at to %s', stream_end_at)
 
             # V2 API: Simplified - no need for multiple date query types
 
@@ -111,13 +126,14 @@ def sync(config, state, catalog):
                 end_at += timedelta(days=1)
                 if end_at > stream_end_at:
                     end_at = stream_end_at
-                # V2 API: Focus on shipments only with modified_at parameters
+                # V2 API: Focus on shipments only with created_at parameters 
+                # Use DATE-ONLY strings (YYYY-MM-DD) and a 1-day window. Example:
+                #   GET https://api.shipstation.com/v2/shipments?created_at_start=2025-09-01&page=1&page_size=100
                 if stream_id == 'shipments':
                     params = {
-                        'modified_at_start': start_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
-                        'modified_at_end': end_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
-                        'page': 1,
-                        'sort_by': 'modified_at'
+                        'created_at_start': start_at.strftime('%Y-%m-%d'),
+                        'created_at_end': end_at.strftime('%Y-%m-%d'),
+                        'page': 1
                     }
                 else:
                     # Skip non-shipment streams for v2 API focus
@@ -163,7 +179,8 @@ def main():
         if args.catalog:
             catalog = args.catalog
         else:
-            catalog = discover()
+            # Convert discover dict into Singer Catalog for compatibility with sync()
+            catalog = Catalog.from_dict(discover())
 
         sync(args.config, args.state, catalog)
 

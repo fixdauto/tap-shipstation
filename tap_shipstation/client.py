@@ -1,15 +1,15 @@
 # CUSTOM PLUGIN: ShipStation Client with v2 API Support
 #
-# MAJOR CHANGES FOR API v2:
-# 1. Updated to use ShipStation API v2 (api.shipstation.com/v2/)
-# 2. Changed from Basic Auth to API-Key header authentication
-#3. Updated configuration to use single api_key instead of key+secret
-#4. Kept all error handling improvements from v1 fix
+# CHANGES FOR API v2 IN THIS PLUGIN:
+# 1. Use ShipStation API v2 base URL (api.shipstation.com/v2/)
+# 2. Support two auth modes:
+#    - Header-based (default): send API key in headers ("api-key" and "SS-API-KEY")
+#    - Basic Auth (optional): if api_secret is provided or auth_mode=="basic"
 #
 # ERROR HANDLING FIXES (from v1):
-#1. Added try/catch around response.json() to handle HTML error responses 
-#2. Added logging when JSON parsing fails
-#3. Added specific 401/403 error handling with clear messages
+# 1. Added try/catch around response.json() to handle HTML error responses
+# 2. Added logging when JSON parsing fails
+# 3. Added specific 401/403 error handling with clear messages
 # 4. Added response content logging for debugging
 
 import time
@@ -30,23 +30,30 @@ def prepare_datetime(dt):
 
 class ShipStationClient:
     def __init__(self, config):
-        # V2 API uses single API key instead of username/password
+        # V2 API supports both header-based key auth and Basic Auth
         self.api_key = config['api_key']
-        # Keep api_secret for backward compatibility, but v2 only needs api_key
-        if 'api_secret' in config:
-            LOGGER.warning("V2 API detected - api_secret parameter is ignored, only api_key is used")
+        self.api_secret = config.get('api_secret')
+        self.auth_mode = config.get('auth_mode', 'header').lower()
 
     def make_request(self, url, params):
         LOGGER.info('Making request to %s with query parameters %s', url, params)
         params['page_size'] = PAGE_SIZE  # V2 API uses page_size instead of pageSize
-        
-        # V2 API uses api-key header (lowercase with hyphen)
+
         headers = {
-            'api-key': self.api_key,
             'Content-Type': 'application/json'
         }
-        
-        response = requests.get(url, params=params, headers=headers)
+
+        # Decide auth method
+        if self.auth_mode == 'basic' or self.api_secret:
+            # Basic Auth using api_key as username and api_secret as password
+            response = requests.get(url, params=params, headers=headers, auth=(self.api_key, self.api_secret))
+        else:
+            # Header-based key auth (as seen working in Postman for some accounts)
+            headers.update({
+                'api-key': self.api_key,
+                'SS-API-KEY': self.api_key
+            })
+            response = requests.get(url, params=params, headers=headers)
         return response
 
     def paginate(self, endpoint, params):
@@ -55,6 +62,7 @@ class ShipStationClient:
             response = self.make_request(url, params)
             headers = response.headers
             status_code = response.status_code
+            LOGGER.info('ShipStation v2 %s request -> status %s (page=%s, page_size=%s)', endpoint, status_code, params.get('page'), params.get('page_size'))
             
             if status_code == 200:
                 # CUSTOM FIX: Added try/catch around response.json() to handle HTML error responses
@@ -83,28 +91,62 @@ class ShipStationClient:
                             LOGGER.error('API response suggests authentication or authorization error.')
                     raise e
                 
-                if response_json['total'] == 0:
+                if response_json.get('total') == 0:
                     LOGGER.info('No Data for endpoint')
                     break
-                yield response_json[endpoint]
+                # Items list can be addressed by endpoint name (e.g., 'shipments')
+                items = response_json.get(endpoint, [])
+                yield items
                 LOGGER.info(
                     'Finished requesting page %s out of %s total pages.',
-                    response_json['page'],
-                    response_json['pages'])
-                if response_json['page'] >= response_json['pages']:
-                    break
-                params['page'] += 1
+                    response_json.get('page'),
+                    response_json.get('pages'))
 
-                # Respect API rate limits
-                if int(headers['X-Rate-Limit-Remaining']) < 1:
-                    wait_seconds = int(headers['X-Rate-Limit-Reset']) + 1 # Buffer of 1 second
-                    LOGGER.info(
-                        "Waiting for %s seconds to respect ShipStation's API rate limit.",
-                        wait_seconds)
+                # Determine if more pages are available
+                has_more = False
+                if 'page' in response_json and 'pages' in response_json:
+                    # Classic counter-based pagination
+                    has_more = response_json['page'] < response_json['pages']
+                elif 'links' in response_json:
+                    # HAL-style links object with 'next'
+                    next_link = response_json['links'].get('next') if isinstance(response_json['links'], dict) else None
+                    has_more = bool(next_link)
+                else:
+                    # Fallback: compare returned items against page size
+                    has_more = len(items) == params.get('page_size', PAGE_SIZE)
+
+                if not has_more:
+                    break
+
+                # Advance page for next request
+                params['page'] = int(params.get('page', 1)) + 1
+
+                # Respect API rate limits (be tolerant of header naming/missing headers)
+                remaining = None
+                reset = None
+                # Try common header casings
+                for k, v in headers.items():
+                    lk = k.lower()
+                    if 'rate-limit-remaining' in lk:
+                        try:
+                            remaining = int(v)
+                        except Exception:
+                            remaining = None
+                    if 'rate-limit-reset' in lk:
+                        try:
+                            reset = int(v)
+                        except Exception:
+                            reset = None
+                if remaining is not None and remaining < 1 and reset is not None:
+                    wait_seconds = reset + 1  # Buffer of 1 second
+                    LOGGER.info("Waiting for %s seconds to respect ShipStation's API rate limit.", wait_seconds)
                     time.sleep(wait_seconds)
             elif status_code == 401:
                 # CUSTOM FIX: Added specific 401 error handling with clear message
-                LOGGER.error('Authentication failed. Please check your API key and secret.')
+                if self.auth_mode == 'basic' or self.api_secret:
+                    LOGGER.error('Authentication failed (401). Check API key and secret or account permissions.')
+                else:
+                    LOGGER.error('Authentication failed (401). Header-based API key was rejected. Verify key or try auth_mode="basic" with api_secret if your account requires it.')
                 response.raise_for_status()
             elif status_code == 403:
                 # CUSTOM FIX: Added specific 403 error handling with clear message
