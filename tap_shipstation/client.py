@@ -5,6 +5,7 @@
 # 2. Support two auth modes:
 #    - Header-based (default): send API key in headers ("api-key" and "SS-API-KEY")
 #    - Basic Auth (optional): if api_secret is provided or auth_mode=="basic"
+# 3. Keep robust error handling and pagination logic
 #
 # ERROR HANDLING FIXES (from v1):
 # 1. Added try/catch around response.json() to handle HTML error responses
@@ -22,11 +23,13 @@ LOGGER = singer.get_logger()
 BASE_URL = 'https://api.shipstation.com/v2/'  # V2 API URL
 PAGE_SIZE = 100
 
+
 def prepare_datetime(dt):
     # ShipStation requests must be in Pacific timezone
     timezone = pendulum.timezone('America/Los_Angeles')
     converted = timezone.convert(dt).strftime('%Y-%m-%d %H:%M:%S')
     return converted
+
 
 class ShipStationClient:
     def __init__(self, config):
@@ -57,13 +60,13 @@ class ShipStationClient:
         return response
 
     def paginate(self, endpoint, params):
-        url = BASE_URL + endpoint        
+        url = BASE_URL + endpoint
         while True:
             response = self.make_request(url, params)
             headers = response.headers
             status_code = response.status_code
             LOGGER.info('ShipStation v2 %s request -> status %s (page=%s, page_size=%s)', endpoint, status_code, params.get('page'), params.get('page_size'))
-            
+
             if status_code == 200:
                 # CUSTOM FIX: Added try/catch around response.json() to handle HTML error responses
                 # ORIGINAL CODE: response_json = response.json()  # This line crashed when API returned HTML
@@ -74,14 +77,12 @@ class ShipStationClient:
                     LOGGER.error('JSON decode error. Response status: %s', status_code)
                     LOGGER.error('Response headers: %s', dict(headers))
                     LOGGER.error('Response content (first 1000 chars): %s', response.text[:1000])
-                    # Try to extract more detailed error information
                     if 'text/html' in response.headers.get('content-type', ''):
                         LOGGER.error('Received HTML response instead of JSON. This usually indicates an API error or authentication issue.')
                         if 'error' in response.text.lower() or 'unauthorized' in response.text.lower():
                             LOGGER.error('API response suggests authentication or authorization error.')
                     raise e
                 except json.JSONDecodeError as e:
-                    # CUSTOM FIX: Handle older Python versions that use json.JSONDecodeError
                     LOGGER.error('JSON decode error. Response status: %s', status_code)
                     LOGGER.error('Response headers: %s', dict(headers))
                     LOGGER.error('Response content (first 1000 chars): %s', response.text[:1000])
@@ -90,7 +91,7 @@ class ShipStationClient:
                         if 'error' in response.text.lower() or 'unauthorized' in response.text.lower():
                             LOGGER.error('API response suggests authentication or authorization error.')
                     raise e
-                
+
                 if response_json.get('total') == 0:
                     LOGGER.info('No Data for endpoint')
                     break
@@ -105,26 +106,20 @@ class ShipStationClient:
                 # Determine if more pages are available
                 has_more = False
                 if 'page' in response_json and 'pages' in response_json:
-                    # Classic counter-based pagination
                     has_more = response_json['page'] < response_json['pages']
                 elif 'links' in response_json:
-                    # HAL-style links object with 'next'
                     next_link = response_json['links'].get('next') if isinstance(response_json['links'], dict) else None
                     has_more = bool(next_link)
                 else:
-                    # Fallback: compare returned items against page size
                     has_more = len(items) == params.get('page_size', PAGE_SIZE)
 
                 if not has_more:
                     break
 
-                # Advance page for next request
                 params['page'] = int(params.get('page', 1)) + 1
 
-                # Respect API rate limits (be tolerant of header naming/missing headers)
                 remaining = None
                 reset = None
-                # Try common header casings
                 for k, v in headers.items():
                     lk = k.lower()
                     if 'rate-limit-remaining' in lk:
@@ -138,25 +133,22 @@ class ShipStationClient:
                         except Exception:
                             reset = None
                 if remaining is not None and remaining < 1 and reset is not None:
-                    wait_seconds = reset + 1  # Buffer of 1 second
+                    wait_seconds = reset + 1
                     LOGGER.info("Waiting for %s seconds to respect ShipStation's API rate limit.", wait_seconds)
                     time.sleep(wait_seconds)
             elif status_code == 401:
-                # CUSTOM FIX: Added specific 401 error handling with clear message
                 if self.auth_mode == 'basic' or self.api_secret:
                     LOGGER.error('Authentication failed (401). Check API key and secret or account permissions.')
                 else:
                     LOGGER.error('Authentication failed (401). Header-based API key was rejected. Verify key or try auth_mode="basic" with api_secret if your account requires it.')
                 response.raise_for_status()
             elif status_code == 403:
-                # CUSTOM FIX: Added specific 403 error handling with clear message
                 LOGGER.error('Forbidden. Please check your API permissions.')
                 response.raise_for_status()
             elif status_code == 429:
                 time.sleep(60)
                 LOGGER.info("Waiting for 60 seconds due to 429 without warning")
             else:
-                # CUSTOM FIX: Added response content logging for debugging other errors
                 LOGGER.error('Request failed with status %s', status_code)
                 LOGGER.error('Response content: %s', response.text[:1000])
                 response.raise_for_status()

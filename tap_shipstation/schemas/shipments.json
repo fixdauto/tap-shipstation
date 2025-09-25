@@ -1,125 +1,247 @@
 {
-  "type": ["null", "object"],
+  "type": "object",
   "additionalProperties": false,
-  "definitions": {
-    "Address": {
-      "type": ["null", "object"],
-      "properties": {
-        "name": { "type": ["null", "string"] },
-        "company": { "type": ["null", "string"] },
-        "street1": { "type": ["null", "string"] },
-        "street2": { "type": ["null", "string"] },
-        "street3": { "type": ["null", "string"] },
-        "city": { "type": ["null", "string"] },
-        "state": { "type": ["null", "string"] },
-        "postalCode": { "type": ["null", "string"] },
-        "country": { "type": ["null", "string"] },
-        "phone": { "type": ["null", "string"] },
-        "residential": { "type": ["null", "boolean"] },
-        "addressVerified": { "type": ["null", "string"] }
-      }
-    },
-    "AdvancedOptions": {
-      "type": ["null", "object"],
-      "properties": {
-        "storeId": { "type": ["null", "integer"] },
-        "billToParty": { "type": ["null", "string"] },
-        "billToAccount": { "type": ["null", "string"] },
-        "billToPostalCode": { "type": ["null", "string"] },
-        "billToCountryCode": { "type": ["null", "string"] }
-      }
-    },
-    "Dimensions": {
-      "type": ["null", "object"],
-      "properties": {
-        "length": { "type": ["null", "number"] },
-        "width": { "type": ["null", "number"] },
-        "height": { "type": ["null", "number"] },
-        "units": { "type": ["null", "string"] }
-      }
-    },
-    "InsuranceOptions": {
-      "type": ["null", "object"],
-      "properties": {
-        "provider": { "type": ["null", "string"] },
-        "insureShipment": { "type": ["null", "boolean"] },
-        "insuredValue": { "type": ["null", "number"] }
-      }
-    },
-    "ItemOption": {
-      "type": ["null", "object"],
-      "properties": {
-        "name": { "type": ["null", "string"] },
-        "value": { "type": ["null", "string"] }
-      }
-    },
-    "OrderItem": {
-      "type": ["null", "object"],
-      "properties": {
-        "orderItemId": { "type": ["null", "integer"] },
-        "lineItemKey": { "type": ["null", "string"] },
-        "sku": { "type": ["null", "string"] },
-        "name": { "type": ["null", "string"] },
-        "imageUrl": { "type": ["null", "string"] },
-        "weight": { "$ref": "#/definitions/Weight" },
-        "quantity": { "type": ["null", "integer"] },
-        "unitPrice": { "type": ["null", "number"] },
-        "taxAmount": { "type": ["null", "number"] },
-        "shippingAmount": { "type": ["null", "number"] },
-        "warehouseLocation": { "type": ["null", "string"] },
-        "options": {
-          "type": ["null", "array"],
-          "items": { "$ref": "#/definitions/ItemOption" }
-        },
-        "productId": { "type": ["null", "integer"] },
-        "fulfillmentSku": { "type": ["null", "string"] },
-        "adjustment": { "type": ["null", "boolean"] },
-        "upc": { "type": ["null", "string"] },
-        "createDate": { "type": ["null", "string"] },
-        "modifyDate": { "type": ["null", "string"] }
-      }
-    },
-    "Weight": {
-      "type": ["null", "object"],
-      "properties": {
-        "value": { "type": ["null", "number"] },
-        "units": { "type": ["null", "string"] },
-        "WeightUnits": { "type": ["null", "number"] }
-      }
-    }
-  },
   "properties": {
-    "shipmentId": { "type": ["null", "string"] },
-    "orderId": { "type": ["null", "string"] },
-    "orderKey": { "type": ["null", "string"] },
-    "userId": { "type": ["null", "string"] },
-    "orderNumber": { "type": ["null", "string"] },
-    "createDate": { "type": ["null", "string"] },
-    "shipDate": { "type": ["null", "string"] },
-    "shipmentCost": { "type": ["null", "number"] },
-    "insuranceCost": { "type": ["null", "number"] },
-    "trackingNumber": { "type": ["null", "string"] },
-    "isReturnLabel": { "type": ["null", "boolean"] },
-    "batchNumber": { "type": ["null", "string"] },
-    "carrierCode": { "type": ["null", "string"] },
-    "serviceCode": { "type": ["null", "string"] },
-    "packageCode": { "type": ["null", "string"] },
-    "confirmation": { "type": ["null", "string"] },
-    "warehouseId": { "type": ["null", "integer"] },
-    "voided": { "type": ["null", "boolean"] },
-    "voidDate": { "type": ["null", "string"] },
-    "marketplaceNotified": { "type": ["null", "boolean"] },
-    "notifyErrorMessage": { "type": ["null", "string"] },
-    "shipTo": { "$ref": "#/definitions/Address" },
-    "weight": { "$ref": "#/definitions/Weight" },
-    "dimensions": { "$ref": "#/definitions/Dimensions" },
-    "insuranceOptions": { "$ref": "#/definitions/InsuranceOptions" },
-    "advancedOptions": { "$ref": "#/definitions/AdvancedOptions" },
-    "shipmentItems": {
-      "type": ["null", "array"],
-      "items": { "$ref": "#/definitions/OrderItem" }
+    "shipment_id": { "type": ["null","string"] },
+    "carrier_id": { "type": ["null","string"] },
+    "service_code": { "type": ["null","string"] },
+    "requested_shipment_service": { "type": ["null","string"] },
+    "external_shipment_id": { "type": ["null","string"] },
+    "shipment_number": { "type": ["null","string"] },
+    "hold_until_date": { "type": ["null","string"], "format": "date-time" },
+    "ship_date": { "type": ["null","string"], "format": "date-time" },
+    "ship_by_date": { "type": ["null","string"], "format": "date-time" },
+    "created_at": { "type": ["null","string"], "format": "date-time" },
+    "modified_at": { "type": ["null","string"], "format": "date-time" },
+    "shipment_status": { "type": ["null","string"] },
+    "ship_to": {
+      "type": ["null", "object"],
+      "properties": {
+        "geolocation": { "type": ["null", "string"] },
+        "instructions": { "type": ["null", "string"] },
+        "name": { "type": ["null", "string"] },
+        "phone": { "type": ["null", "string"] },
+        "email": { "type": ["null", "string"] },
+        "company_name": { "type": ["null", "string"] },
+        "address_line1": { "type": ["null", "string"] },
+        "address_line2": { "type": ["null", "string"] },
+        "address_line3": { "type": ["null", "string"] },
+        "city_locality": { "type": ["null", "string"] },
+        "state_province": { "type": ["null", "string"] },
+        "postal_code": { "type": ["null", "string"] },
+        "country_code": { "type": ["null", "string"] },
+        "address_residential_indicator": { "type": ["null", "string"] }
+      }
     },
-    "labelData": { "type": ["null", "string"] },
-    "formData": { "type": ["null", "string"] }
-  }
+    "ship_from": {
+      "type": ["null", "object"],
+      "properties": {
+        "instructions": { "type": ["null", "string"] },
+        "name": { "type": ["null", "string"] },
+        "phone": { "type": ["null", "string"] },
+        "email": { "type": ["null", "string"] },
+        "company_name": { "type": ["null", "string"] },
+        "address_line1": { "type": ["null", "string"] },
+        "address_line2": { "type": ["null", "string"] },
+        "address_line3": { "type": ["null", "string"] },
+        "city_locality": { "type": ["null", "string"] },
+        "state_province": { "type": ["null", "string"] },
+        "postal_code": { "type": ["null", "string"] },
+        "country_code": { "type": ["null", "string"] },
+        "address_residential_indicator": { "type": ["null", "string"] }
+      }
+    },
+    "warehouse_id": { "type": ["null","string"] },
+    "return_to": {
+      "type": ["null", "object"],
+      "properties": {
+        "instructions": { "type": ["null", "string"] },
+        "name": { "type": ["null", "string"] },
+        "phone": { "type": ["null", "string"] },
+        "email": { "type": ["null", "string"] },
+        "company_name": { "type": ["null", "string"] },
+        "address_line1": { "type": ["null", "string"] },
+        "address_line2": { "type": ["null", "string"] },
+        "address_line3": { "type": ["null", "string"] },
+        "city_locality": { "type": ["null", "string"] },
+        "state_province": { "type": ["null", "string"] },
+        "postal_code": { "type": ["null", "string"] },
+        "country_code": { "type": ["null", "string"] },
+        "address_residential_indicator": { "type": ["null", "string"] }
+      }
+    },
+    "is_return": { "type": ["null","boolean"] },
+    "confirmation": { "type": ["null","string"] },
+    "customs": { "type": ["null", "object"], "properties": {} },
+    "external_order_id": { "type": ["null","string"] },
+    "order_source_code": { "type": ["null","string"] },
+    "advanced_options": {
+      "type": ["null", "object"],
+      "properties": {
+        "bill_to_account": { "type": ["null", "string"] },
+        "bill_to_country_code": { "type": ["null", "string"] },
+        "bill_to_party": { "type": ["null", "string"] },
+        "bill_to_postal_code": { "type": ["null", "string"] },
+        "bill_to_name": { "type": ["null", "string"] },
+        "bill_to_address_line1": { "type": ["null", "string"] },
+        "contains_alcohol": { "type": ["null", "boolean"] },
+        "delivered_duty_paid": { "type": ["null", "boolean"] },
+        "non_machinable": { "type": ["null", "boolean"] },
+        "saturday_delivery": { "type": ["null", "boolean"] },
+        "dry_ice": { "type": ["null", "boolean"] },
+        "dry_ice_weight": { "type": ["null", "object"], "properties": {} },
+        "fedex_freight": { "type": ["null", "object"], "properties": {} },
+        "third_party_consignee": { "type": ["null", "boolean"] },
+        "guaranteed_duties_and_taxes": { "type": ["null", "boolean"] },
+        "ancillary_endorsements_option": { "type": ["null", "string"] },
+        "freight_class": { "type": ["null", "string"] },
+        "custom_field1": { "type": ["null", "string"] },
+        "custom_field2": { "type": ["null", "string"] },
+        "custom_field3": { "type": ["null", "string"] },
+        "collect_on_delivery": { "type": ["null", "object"], "properties": {} },
+        "return_pickup_attempts": { "type": ["null", "integer"] },
+        "additional_handling": { "type": ["null", "boolean"] },
+        "own_document_upload": { "type": ["null", "boolean"] },
+        "limited_quantity": { "type": ["null", "boolean"] },
+        "event_notification": { "type": ["null", "boolean"] },
+        "import_services": { "type": ["null", "boolean"] },
+        "override_holiday": { "type": ["null", "boolean"] }
+      }
+    },
+    "comparison_rate_type": { "type": ["null","string"] },
+    "retail_rate": { "type": ["null", "object"], "properties": {} },
+    "shipping_rule_id": { "type": ["null","integer"] },
+    "insurance_provider": { "type": ["null","string"] },
+    "tags": {
+      "type": ["null","array"],
+      "items": {
+        "type": ["null","object"],
+        "properties": {
+          "tag_id": { "type": ["null","integer"] },
+          "name": { "type": ["null","string"] },
+          "color": { "type": ["null","string"] }
+        }
+      }
+    },
+    "store_id": { "type": ["null","string"] },
+    "packages": {
+      "type": ["null","array"],
+      "items": {
+        "type": ["null","object"],
+        "properties": {
+          "shipment_package_id": { "type": ["null", "string"] },
+          "package_id": { "type": ["null", "integer"] },
+          "package_code": { "type": ["null","string"] },
+          "package_name": { "type": ["null", "string"] },
+          "weight": {
+            "type": ["null","object"],
+            "properties": {
+              "value": { "type": ["null", "number"] },
+              "unit": { "type": ["null", "string"] }
+            }
+          },
+          "dimensions": {
+            "type": ["null","object"],
+            "properties": {
+              "unit": { "type": ["null", "string"] },
+              "length": { "type": ["null", "number"] },
+              "width": { "type": ["null", "number"] },
+              "height": { "type": ["null", "number"] }
+            }
+          },
+          "insured_value": {
+            "type": ["null", "object"],
+            "properties": {
+              "currency": { "type": ["null", "string"] },
+              "amount": { "type": ["null", "number"] }
+            }
+          },
+          "label_messages": {
+            "type": ["null", "object"],
+            "properties": {
+              "reference1": { "type": ["null", "string"] },
+              "reference2": { "type": ["null", "string"] },
+              "reference3": { "type": ["null", "string"] }
+            }
+          },
+          "external_package_id": { "type": ["null", "string"] },
+          "content_description": { "type": ["null", "string"] },
+          "products": { "type": ["null", "array"], "items": {} },
+          "dangerous_goods_package_info": { "type": ["null", "object"], "properties": {} }
+        }
+      }
+    },
+    "total_weight": {
+      "type": ["null","object"],
+      "properties": {
+        "value": { "type": ["null","number"] },
+        "unit": { "type": ["null","string"] }
+      }
+    },
+    "items": {
+      "type": ["null","array"],
+      "items": {
+        "type": ["null","object"],
+        "properties": {
+          "sales_order_id": { "type": ["null", "integer"] },
+          "sales_order_item_id": { "type": ["null", "integer"] },
+          "quantity": { "type": ["null","integer"] },
+          "name": { "type": ["null","string"] },
+          "sku": { "type": ["null","string"] },
+          "bundle_sku": { "type": ["null", "string"] },
+          "external_order_id": { "type": ["null", "string"] },
+          "external_order_item_id": { "type": ["null", "string"] },
+          "asin": { "type": ["null", "string"] },
+          "order_source_code": { "type": ["null", "string"] },
+          "item_id": { "type": ["null", "string"] },
+          "allocation_status": { "type": ["null", "string"] },
+          "image_url": { "type": ["null", "string"] },
+          "weight": {
+            "type": ["null","object"],
+            "properties": {
+              "value": { "type": ["null", "number"] },
+              "unit": { "type": ["null", "string"] }
+            }
+          },
+          "unit_price": { "type": ["null","number"] },
+          "tax_amount": { "type": ["null","number"] },
+          "shipping_amount": { "type": ["null","number"] },
+          "inventory_location": { "type": ["null", "string"] },
+          "options": { "type": ["null", "array"], "items": {} },
+          "product_id": { "type": ["null", "string"] },
+          "fullfilment_sku": { "type": ["null", "string"] },
+          "upc": { "type": ["null", "string"] }
+        }
+      }
+    },
+    "notes_from_buyer": { "type": ["null","string"] },
+    "notes_for_gift": { "type": ["null","string"] },
+    "is_gift": { "type": ["null","boolean"] },
+    "assigned_user": { "type": ["null","string"] },
+    "amount_paid": {
+      "type": ["null","object"],
+      "properties": {
+        "currency": { "type": ["null", "string"] },
+        "amount": { "type": ["null", "number"] }
+      }
+    },
+    "shipping_paid": {
+      "type": ["null","object"],
+      "properties": {
+        "currency": { "type": ["null", "string"] },
+        "amount": { "type": ["null", "number"] }
+      }
+    },
+    "tax_paid": {
+      "type": ["null","object"],
+      "properties": {
+        "currency": { "type": ["null", "string"] },
+        "amount": { "type": ["null", "number"] }
+      }
+    },
+    "zone": { "type": ["null","integer"] },
+    "display_scheme": { "type": ["null","string"] },
+    "dangerous_goods_declaration": { "type": ["null", "object"], "properties": {} }
+  },
+  "required": ["shipment_id"]
 }
