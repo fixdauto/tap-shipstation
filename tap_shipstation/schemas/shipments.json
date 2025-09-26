@@ -130,7 +130,7 @@
         "type": ["null","object"],
         "properties": {
           "shipment_package_id": { "type": ["null", "string"] },
-          "package_id": { "type": ["null", "integer"] },
+          "package_id": { "type": ["null", "string", "integer"] },
           "package_code": { "type": ["null","string"] },
           "package_name": { "type": ["null", "string"] },
           "weight": {
