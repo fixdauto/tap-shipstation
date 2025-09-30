@@ -33,30 +33,20 @@ def prepare_datetime(dt):
 
 class ShipStationClient:
     def __init__(self, config):
-        # V2 API supports both header-based key auth and Basic Auth
+        # V2 API uses header-based key auth
         self.api_key = config['api_key']
-        self.api_secret = config.get('api_secret')
-        self.auth_mode = config.get('auth_mode', 'header').lower()
 
     def make_request(self, url, params):
         LOGGER.info('Making request to %s with query parameters %s', url, params)
-        params['page_size'] = PAGE_SIZE  # V2 API uses page_size instead of pageSize
+        params['page_size'] = PAGE_SIZE
 
         headers = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'api-key': self.api_key,
+            'SS-API-KEY': self.api_key
         }
 
-        # Decide auth method
-        if self.auth_mode == 'basic' or self.api_secret:
-            # Basic Auth using api_key as username and api_secret as password
-            response = requests.get(url, params=params, headers=headers, auth=(self.api_key, self.api_secret))
-        else:
-            # Header-based key auth (as seen working in Postman for some accounts)
-            headers.update({
-                'api-key': self.api_key,
-                'SS-API-KEY': self.api_key
-            })
-            response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers)
         return response
 
     def paginate(self, endpoint, params):
@@ -137,10 +127,7 @@ class ShipStationClient:
                     LOGGER.info("Waiting for %s seconds to respect ShipStation's API rate limit.", wait_seconds)
                     time.sleep(wait_seconds)
             elif status_code == 401:
-                if self.auth_mode == 'basic' or self.api_secret:
-                    LOGGER.error('Authentication failed (401). Check API key and secret or account permissions.')
-                else:
-                    LOGGER.error('Authentication failed (401). Header-based API key was rejected. Verify key or try auth_mode="basic" with api_secret if your account requires it.')
+                LOGGER.error('Authentication failed (401). Header-based API key was rejected. Verify the key.')
                 response.raise_for_status()
             elif status_code == 403:
                 LOGGER.error('Forbidden. Please check your API permissions.')

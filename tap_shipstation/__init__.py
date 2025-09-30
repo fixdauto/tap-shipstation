@@ -8,8 +8,8 @@ from singer import utils, metadata
 from singer.catalog import Catalog
 from .client import ShipStationClient
 
-# API v2: header-based auth by default; basic auth available if api_secret provided
-REQUIRED_CONFIG_KEYS = ['api_key', 'default_start_datetime']
+# API v2: header-based auth by default
+REQUIRED_CONFIG_KEYS = ['api_key']
 LOGGER = singer.get_logger()
 
 
@@ -35,7 +35,6 @@ def discover():
 
     keys = {
         'shipments': ['shipment_id'],
-        # Keep placeholder for orders in case it's added later; currently we focus on shipments only
         'orders': ['orderId']
     }
 
@@ -108,7 +107,8 @@ def sync(config, state, catalog):
         if bookmark:
             start_at = pendulum.parse(bookmark, tz='America/Los_Angeles')
         else:
-            start_at = pendulum.parse(config['default_start_datetime'], tz='America/Los_Angeles')
+            LOGGER.info("No bookmark found. Syncing last 30 days.")
+            start_at = pendulum.now('America/Los_Angeles').subtract(days=30)
 
         stream_end_at = pendulum.now('America/Los_Angeles')
         if os.getenv('SHIPSTATION_TEST_ONE_DAY', 'false').lower() == 'true':
