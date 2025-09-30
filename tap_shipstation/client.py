@@ -1,17 +1,14 @@
-# CUSTOM PLUGIN: ShipStation Client with v2 API Support
-#
-# CHANGES FOR API v2 IN THIS PLUGIN:
-# 1. Use ShipStation API v2 base URL (api.shipstation.com/v2/)
-# 2. Support two auth modes:
-#    - Header-based (default): send API key in headers ("api-key" and "SS-API-KEY")
-#    - Basic Auth (optional): if api_secret is provided or auth_mode=="basic"
-# 3. Keep robust error handling and pagination logic
-#
-# ERROR HANDLING FIXES (from v1):
-# 1. Added try/catch around response.json() to handle HTML error responses
-# 2. Added logging when JSON parsing fails
-# 3. Added specific 401/403 error handling with clear messages
-# 4. Added response content logging for debugging
+'''
+Defines a client for interacting with the ShipStation v2 API.
+
+The `ShipStationClient` class encapsulates the logic for:
+  - Authenticating requests using an API key in the headers.
+  - Making GET requests to specified API endpoints.
+  - Automatically handling pagination to retrieve all records from a resource.
+  - Respecting API rate limits by pausing execution when necessary.
+  -  Error handling for common HTTP issues and unexpected response formats (e.g., HTML errors).
+Designed to be used as part of a Singer tap for extracting data from ShipStation.
+'''
 
 import time
 import requests
@@ -19,12 +16,16 @@ import pendulum
 import singer
 import json
 
+# Singer logger for consistent, structured logs
 LOGGER = singer.get_logger()
 BASE_URL = 'https://api.shipstation.com/v2/'  # V2 API URL
 PAGE_SIZE = 100
 
 
 def prepare_datetime(dt):
+    # Helper: convert any datetime to the ShipStation-required timezone/format.
+    # Note: This function is currently unused by the sync loop but kept for
+    # clarity and potential future use (e.g., if ShipStation accepts timestamps).
     # ShipStation requests must be in Pacific timezone
     timezone = pendulum.timezone('America/Los_Angeles')
     converted = timezone.convert(dt).strftime('%Y-%m-%d %H:%M:%S')
@@ -32,11 +33,17 @@ def prepare_datetime(dt):
 
 
 class ShipStationClient:
+    # Thin API client responsible for:
+    # - Injecting header-based authentication (v2 API)
+    # - Making GET requests with consistent pagination params
+    # - Providing a paginate() generator that yields pages of results
     def __init__(self, config):
         # V2 API uses header-based key auth
         self.api_key = config['api_key']
 
     def make_request(self, url, params):
+        # Single request helper.
+        # Ensures page_size is set and auth headers are included.
         LOGGER.info('Making request to %s with query parameters %s', url, params)
         params['page_size'] = PAGE_SIZE
 
@@ -50,6 +57,11 @@ class ShipStationClient:
         return response
 
     def paginate(self, endpoint, params):
+        # Generator that walks through all pages for a given endpoint.
+        # Yields a list of items per page and handles:
+        # - JSON parsing edge cases (HTML error pages)
+        # - Basic rate limiting (waits on remaining/reset headers when present)
+        # - Common HTTP errors (401/403/429)
         url = BASE_URL + endpoint
         while True:
             response = self.make_request(url, params)

@@ -1,3 +1,29 @@
+"""
+Implements a Singer tap for the ShipStation v2 API.
+
+The tap operates in two main modes: Discovery and Sync.
+
+Discovery Mode:
+- The `discover()` function builds a Singer Catalog by dynamically loading JSON schemas
+    from the `./schemas` directory.
+- It enriches the catalog with default metadata, including `selected-by-default`
+    and `table-key-properties` for streams like 'shipments' and 'orders'.
+
+Sync Mode:
+- The `sync()` function handles the core data extraction process.
+- It performs incremental extraction using a bookmark based on the `created_at` field.
+- On the first run without a state file, it defaults to syncing data from the last 30 days.
+- To manage API rate limits and ensure predictable request sizes, data is fetched in
+    daily windows.
+- For each selected stream, it iterates day-by-day from the start bookmark to the
+    present, paginating through API results.
+- Records are transformed against their JSON schema before being written to stdout
+    as Singer messages.
+- The state (bookmark) is persisted after each successfully synced day.
+
+The main entry point, `main()`, parses command-line arguments to run either the
+discovery or sync process.
+"""
 import os
 import json
 import jsonref
@@ -14,10 +40,12 @@ LOGGER = singer.get_logger()
 
 
 def get_abs_path(path):
+    # Return absolute path rooted at this module's directory.
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), path)
 
 
 def load_schemas():
+    # Read all schema files and return a dict keyed by stream name.
     schemas = {}
     for filename in os.listdir(get_abs_path('schemas')):
         path = get_abs_path('schemas') + '/' + filename
@@ -29,6 +57,7 @@ def load_schemas():
 
 
 def discover():
+    # Build a Singer catalog from local schemas and default metadata.
     raw_schemas = load_schemas()
 
     streams = []
@@ -67,6 +96,7 @@ def discover():
 
 
 def get_selected_streams(catalog):
+    # Return list of stream ids where top-level metadata 'selected' is True.
     selected_streams = []
     for stream in catalog.streams:
         stream_metadata = metadata.to_map(stream.metadata)
@@ -77,6 +107,11 @@ def get_selected_streams(catalog):
 
 
 def sync(config, state, catalog):
+    # Core extraction loop:
+    # - Determine selected streams
+    # - For each selected stream, compute start/end window
+    # - Iterate day-by-day, paginate ShipStation API, transform, write records
+    # - Persist bookmark at the end of each day
     if isinstance(catalog, dict):
         catalog = Catalog.from_dict(catalog)
     selected_stream_ids = get_selected_streams(catalog)
