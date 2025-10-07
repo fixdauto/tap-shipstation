@@ -165,14 +165,6 @@ def sync(config, state, catalog):
                     'created_at_end': end_at.strftime('%Y-%m-%d'),
                     'page': 1
                 }
-                if stream_id == 'orders':
-                    # Allow override of date filter strategy via env var if needed later.
-                    date_strategy = os.getenv('SHIPSTATION_ORDERS_DATE_STRATEGY', 'created_at')
-                    if date_strategy == 'order_date':
-                        params.pop('created_at_start', None)
-                        params.pop('created_at_end', None)
-                        params['order_date_start'] = start_at.strftime('%Y-%m-%d')
-                        params['order_date_end'] = end_at.strftime('%Y-%m-%d')
             else:
                 LOGGER.info('Skipping unsupported stream %s', stream_id)
                 state = singer.write_bookmark(
