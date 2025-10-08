@@ -123,10 +123,22 @@ def sync(config, state, catalog):
             continue
 
         LOGGER.info("Beginning sync of stream '%s'.", stream_id)
-        singer.write_schema(
-            stream_id,
-            stream_schema.to_dict(),
-            stream.key_properties)
+        # Defensive schema guard: ensure ship_date is always present so the loader
+        # never treats it as dropped (which would trigger an ALTER TABLE DROP COLUMN
+        # and fail due to dependent analytics views).
+        if stream_id == 'shipments':
+            schema_dict = stream_schema.to_dict()
+            props = schema_dict.setdefault('properties', {})
+            if 'ship_date' not in props:
+                LOGGER.warning(
+                    "ship_date missing from discovered shipments schema; injecting fallback property to prevent column drop.")
+                props['ship_date'] = {"type": ["null", "string"], "format": "date-time"}
+            singer.write_schema(stream_id, schema_dict, stream.key_properties)
+        else:
+            singer.write_schema(
+                stream_id,
+                stream_schema.to_dict(),
+                stream.key_properties)
 
         client = ShipStationClient(config)
         # Bookmark alignment: we filter by created_at_* params, so store bookmark under 'created_at'.
