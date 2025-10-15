@@ -1,0 +1,20 @@
+{
+  "type": ["null", "object"],
+  "additionalProperties": true,
+  "properties": {
+    "fulfillment_id": { "type": ["null", "string"] },
+    "shipment_id": { "type": ["null", "string"] },
+    "shipment_number": { "type": ["null", "string"] },
+    "tracking_number": { "type": ["null", "string"] },
+    "carrier_code": { "type": ["null", "string"] },
+    "service_code": { "type": ["null", "string"] },
+    "status": { "type": ["null", "string"] },
+    "created_at": { "type": ["null", "string"] },
+    "ship_date": { "type": ["null", "string"] },
+    "delivered_at": { "type": ["null", "string"] },
+    "order_source_id": { "type": ["null", "string"] },
+    "store_id": { "type": ["null", "string", "integer"] },
+    "items": { "type": ["null", "array"], "items": { "type": ["null", "object"], "additionalProperties": true } },
+    "links": { "type": ["null", "object"], "additionalProperties": true }
+  }
+}
