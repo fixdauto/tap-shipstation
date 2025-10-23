@@ -34,7 +34,7 @@ from singer import utils, metadata
 from singer.catalog import Catalog
 from .client import ShipStationClient
 
-# API v2: header-based auth by default
+# API v2: headers-based auth by default
 REQUIRED_CONFIG_KEYS = ['api_key']
 LOGGER = singer.get_logger()
 
@@ -45,11 +45,15 @@ def get_abs_path(path):
 
 
 def load_schemas():
-    # Read all schema files and return a dict keyed by stream name.
+    # Read v2-supported schema files and return a dict keyed by stream name.
+    # Explicitly filter out deprecated/legacy streams like 'orders'.
+    allowed_streams = {'shipments', 'fulfillments'}
     schemas = {}
     for filename in os.listdir(get_abs_path('schemas')):
-        path = get_abs_path('schemas') + '/' + filename
         file_raw = filename.replace('.json', '')
+        if file_raw not in allowed_streams:
+            continue
+        path = get_abs_path('schemas') + '/' + filename
         with open(path) as file:
             schemas[file_raw] = jsonref.load(file)
 
@@ -64,7 +68,7 @@ def discover():
 
     keys = {
         'shipments': ['shipment_id'],
-        'orders': ['orderId']
+        'fulfillments': ['fulfillment_id']
     }
 
     for schema_name, schema in raw_schemas.items():
@@ -142,8 +146,11 @@ def sync(config, state, catalog):
         if bookmark:
             start_at = pendulum.parse(bookmark, tz='America/Los_Angeles')
         else:
-            LOGGER.info("No bookmark found. Syncing last 30 days.")
-            start_at = pendulum.now('America/Los_Angeles').subtract(days=30)
+            if stream_id == 'fulfillments':
+                start_at = pendulum.now('America/Los_Angeles').subtract(days=7)
+            else:
+                LOGGER.info("No bookmark found. Syncing last 30 days.")
+                start_at = pendulum.now('America/Los_Angeles').subtract(days=30)
 
         stream_end_at = pendulum.now('America/Los_Angeles')
         if os.getenv('SHIPSTATION_TEST_ONE_DAY', 'false').lower() == 'true':
@@ -156,15 +163,22 @@ def sync(config, state, catalog):
         while end_at < stream_end_at:
             end_at = min(end_at.add(days=1), stream_end_at)
 
+            # Shipments and Fulfillments: use created_at filters (v2 behavior)
             if stream_id == 'shipments':
                 params = {
                     'created_at_start': start_at.strftime('%Y-%m-%d'),
                     'created_at_end': end_at.strftime('%Y-%m-%d'),
                     'page': 1
                 }
+            elif stream_id == 'fulfillments':
+                # Independent v2 fulfillments window, same pattern as shipments
+                params = {
+                    'created_at_start': start_at.strftime('%Y-%m-%d'),
+                    'created_at_end': end_at.strftime('%Y-%m-%d'),
+                    'page': 1
+                }
             else:
-                LOGGER.info('Skipping stream %s - focusing on shipments only for v2', stream_id)
-                # Still advance bookmark to avoid reruns if orders exists in catalog
+                LOGGER.info('Skipping unsupported stream %s', stream_id)
                 state = singer.write_bookmark(
                     state=state,
                     tap_stream_id=stream_id,
@@ -175,29 +189,41 @@ def sync(config, state, catalog):
                 continue
 
             try:
-                pages = client.paginate(stream_id, params)
+                if stream_id == 'fulfillments':
+                    pages = client.paginate_fulfillments_v2(params)
+                else:
+                    pages = client.paginate(stream_id, params)
                 debug_sample = os.getenv('SHIPSTATION_DEBUG_SAMPLE', 'false').lower() == 'true'
                 bypass_transform = os.getenv('SHIPSTATION_BYPASS_TRANSFORM', 'false').lower() == 'true'
                 first_logged = False
                 first_transformed_logged = False
                 for page in pages:
                     for record in page:
-                        if stream_id == 'shipments' and debug_sample and not first_logged:
+                        # For fulfillments, enforce a strict client-side window filter to avoid history dumps
+                        if stream_id == 'fulfillments':
+                            ts_str = record.get('created_at') or record.get('ship_date') or record.get('delivered_at')
                             try:
-                                LOGGER.info('Sample shipment record keys (first item): %s', sorted(list(record.keys())))
+                                ts = pendulum.parse(ts_str) if ts_str else None
                             except Exception:
-                                LOGGER.info('Sample shipment record available but failed to log keys.')
+                                ts = None
+                            if (ts is None) or not (start_at <= ts < end_at):
+                                continue
+                        if stream_id in ('shipments', 'fulfillments') and debug_sample and not first_logged:
+                            try:
+                                LOGGER.info('Sample %s record keys (first item): %s', stream_id, sorted(list(record.keys())))
+                            except Exception:
+                                LOGGER.info('Sample %s record available but failed to log keys.', stream_id)
                             first_logged = True
 
                         if bypass_transform:
                             singer.write_record(stream_id, record)
                         else:
                             transformed = singer.transform(record, stream_schema.to_dict())
-                            if stream_id == 'shipments' and debug_sample and not first_transformed_logged:
+                            if stream_id in ('shipments', 'fulfillments') and debug_sample and not first_transformed_logged:
                                 try:
-                                    LOGGER.info('Sample transformed shipment record keys (first item): %s', sorted(list(transformed.keys())))
+                                    LOGGER.info('Sample transformed %s record keys (first item): %s', stream_id, sorted(list(transformed.keys())))
                                 except Exception:
-                                    LOGGER.info('Transformed sample available but failed to log keys.')
+                                    LOGGER.info('Transformed sample available but failed to log keys for %s.', stream_id)
                                 first_transformed_logged = True
                             singer.write_record(stream_id, transformed)
             except Exception as e:

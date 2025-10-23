@@ -21,6 +21,9 @@ LOGGER = singer.get_logger()
 BASE_URL = 'https://api.shipstation.com/v2/'  # V2 API URL
 PAGE_SIZE = 100
 
+def _v2_url(path: str) -> str:
+    return BASE_URL.rstrip('/') + '/' + path.lstrip('/')
+
 
 def prepare_datetime(dt):
     # Helper: convert any datetime to the ShipStation-required timezone/format.
@@ -38,19 +41,25 @@ class ShipStationClient:
     # - Making GET requests with consistent pagination params
     # - Providing a paginate() generator that yields pages of results
     def __init__(self, config):
-        # V2 API uses header-based key auth
+        # V2 API uses header-based key auth only
         self.api_key = config['api_key']
 
     def make_request(self, url, params):
         # Single request helper.
         # Ensures page_size is set and auth headers are included.
         LOGGER.info('Making request to %s with query parameters %s', url, params)
-        params['page_size'] = PAGE_SIZE
+        # ShipStation v2 uses page and page_size (snake_case);
+        # accept pageSize for backwards-compat and normalize it.
+        if 'pageSize' in params and 'page_size' not in params:
+            params['page_size'] = params.pop('pageSize')
+        params.setdefault('page', 1)
+        params.setdefault('page_size', PAGE_SIZE)
 
         headers = {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             'api-key': self.api_key,
-            'SS-API-KEY': self.api_key
+            'SS-API-KEY': self.api_key,
         }
 
         response = requests.get(url, params=params, headers=headers)
@@ -62,7 +71,7 @@ class ShipStationClient:
         # - JSON parsing edge cases (HTML error pages)
         # - Basic rate limiting (waits on remaining/reset headers when present)
         # - Common HTTP errors (401/403/429)
-        url = BASE_URL + endpoint
+        url = _v2_url(endpoint)
         while True:
             response = self.make_request(url, params)
             headers = response.headers
@@ -151,3 +160,8 @@ class ShipStationClient:
                 LOGGER.error('Request failed with status %s', status_code)
                 LOGGER.error('Response content: %s', response.text[:1000])
                 response.raise_for_status()
+
+    def paginate_fulfillments_v2(self, params):
+        # Thin wrapper for clarity; reuse generic v2 paginator
+        for items in self.paginate('fulfillments', params):
+            yield items
