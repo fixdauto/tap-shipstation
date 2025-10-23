@@ -14,7 +14,18 @@
     "delivered_at": { "type": ["null", "string"] },
     "order_source_id": { "type": ["null", "string"] },
     "store_id": { "type": ["null", "string", "integer"] },
-    "items": { "type": ["null", "array"], "items": { "type": ["null", "object"], "additionalProperties": true } },
-    "links": { "type": ["null", "object"], "additionalProperties": true }
+    "items": {
+      "type": ["null", "array"],
+      "items": {
+        "type": ["null", "object"],
+        "additionalProperties": true,
+        "properties": {}
+      }
+    },
+    "links": {
+      "type": ["null", "object"],
+      "additionalProperties": true,
+      "properties": {}
+    }
   }
 }

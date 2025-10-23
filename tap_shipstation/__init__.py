@@ -146,8 +146,11 @@ def sync(config, state, catalog):
         if bookmark:
             start_at = pendulum.parse(bookmark, tz='America/Los_Angeles')
         else:
-            LOGGER.info("No bookmark found. Syncing last 30 days.")
-            start_at = pendulum.now('America/Los_Angeles').subtract(days=30)
+            if stream_id == 'fulfillments':
+                start_at = pendulum.now('America/Los_Angeles').subtract(days=7)
+            else:
+                LOGGER.info("No bookmark found. Syncing last 30 days.")
+                start_at = pendulum.now('America/Los_Angeles').subtract(days=30)
 
         stream_end_at = pendulum.now('America/Los_Angeles')
         if os.getenv('SHIPSTATION_TEST_ONE_DAY', 'false').lower() == 'true':
