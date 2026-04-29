@@ -165,3 +165,77 @@ class ShipStationClient:
         # Thin wrapper for clarity; reuse generic v2 paginator
         for items in self.paginate('fulfillments', params):
             yield items
+
+    def get_tracking_by_label(self, label_id):
+        """
+        Fetch tracking info for a shipment by label_id.
+        Returns tracking data or None if not available (404).
+        """
+        url = _v2_url(f'labels/{label_id}/track')
+        LOGGER.info('Fetching tracking for label_id: %s', label_id)
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': self.api_key,
+            'SS-API-KEY': self.api_key,
+        }
+
+        response = requests.get(url, headers=headers)
+        status_code = response.status_code
+
+        if status_code == 200:
+            try:
+                return response.json()
+            except (requests.exceptions.JSONDecodeError, json.JSONDecodeError) as e:
+                LOGGER.warning('JSON decode error for label %s: %s', label_id, str(e))
+                return None
+        elif status_code == 404:
+            LOGGER.info('No tracking available for label_id %s (404)', label_id)
+            return None
+        elif status_code == 429:
+            LOGGER.info('Rate limited on tracking call, sleeping 60s')
+            time.sleep(60)
+            return self.get_tracking_by_label(label_id)
+        else:
+            LOGGER.warning('Tracking request failed for label %s with status %s', label_id, status_code)
+            return None
+
+    def get_tracking_by_number(self, carrier_code, tracking_number):
+        """
+        Fallback: fetch tracking info by carrier_code and tracking_number.
+        Returns tracking data or None if not available.
+        """
+        url = _v2_url('tracking')
+        params = {
+            'carrier_code': carrier_code,
+            'tracking_number': tracking_number
+        }
+        LOGGER.info('Fetching tracking for carrier=%s, tracking=%s', carrier_code, tracking_number)
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': self.api_key,
+            'SS-API-KEY': self.api_key,
+        }
+
+        response = requests.get(url, params=params, headers=headers)
+        status_code = response.status_code
+
+        if status_code == 200:
+            try:
+                return response.json()
+            except (requests.exceptions.JSONDecodeError, json.JSONDecodeError) as e:
+                LOGGER.warning('JSON decode error for tracking %s: %s', tracking_number, str(e))
+                return None
+        elif status_code == 404:
+            LOGGER.info('No tracking available for %s/%s (404)', carrier_code, tracking_number)
+            return None
+        elif status_code == 429:
+            LOGGER.info('Rate limited on tracking call, sleeping 60s')
+            time.sleep(60)
+            return self.get_tracking_by_number(carrier_code, tracking_number)
+        else:
+            LOGGER.warning('Tracking request failed with status %s', status_code)
+            return None

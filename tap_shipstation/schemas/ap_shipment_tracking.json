@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "shipment_id": { "type": ["null", "string"] },
+    "shipment_number": { "type": ["null", "string"] },
+    "label_id": { "type": ["null", "string"] },
+    "tracking_number": { "type": ["null", "string"] },
+    "carrier_code": { "type": ["null", "string"] },
+    "status_code": { "type": ["null", "string"] },
+    "status_description": { "type": ["null", "string"] },
+    "carrier_status_code": { "type": ["null", "string"] },
+    "carrier_status_description": { "type": ["null", "string"] },
+    "shipped_date": { "type": ["null", "string"], "format": "date-time" },
+    "estimated_delivery_date": { "type": ["null", "string"], "format": "date-time" },
+    "actual_delivery_date": { "type": ["null", "string"], "format": "date-time" },
+    "exception_description": { "type": ["null", "string"] },
+    "events": {
+      "type": ["null", "array"],
+      "items": {
+        "type": ["null", "object"],
+        "properties": {
+          "occurred_at": { "type": ["null", "string"], "format": "date-time" },
+          "description": { "type": ["null", "string"] },
+          "city_locality": { "type": ["null", "string"] },
+          "state_province": { "type": ["null", "string"] },
+          "postal_code": { "type": ["null", "string"] },
+          "country_code": { "type": ["null", "string"] },
+          "company_name": { "type": ["null", "string"] },
+          "signer": { "type": ["null", "string"] },
+          "event_code": { "type": ["null", "string"] },
+          "status_code": { "type": ["null", "string"] },
+          "carrier_status_code": { "type": ["null", "string"] },
+          "carrier_detail_code": { "type": ["null", "string"] },
+          "latitude": { "type": ["null", "number"] },
+          "longitude": { "type": ["null", "number"] }
+        }
+      }
+    },
+    "ship_to_name": { "type": ["null", "string"] },
+    "ship_to_company_name": { "type": ["null", "string"] },
+    "ship_to_email": { "type": ["null", "string"] },
+    "ship_to_state_province": { "type": ["null", "string"] },
+    "fetched_at": { "type": ["null", "string"], "format": "date-time" }
+  },
+  "required": ["shipment_id"]
+}
