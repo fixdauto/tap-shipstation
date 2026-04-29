@@ -181,8 +181,15 @@ def sync(config, state, catalog):
 
     tracking_stream_id = 'ap_shipment_tracking'
     tracking_selected = tracking_stream_id in selected_stream_ids
-    tracking_schema_written = False
     tracking_stream = _get_stream_from_catalog(catalog, tracking_stream_id)
+
+    # Write tracking schema upfront if selected to ensure table gets created
+    if tracking_selected and tracking_stream is not None:
+        LOGGER.info("Writing schema for stream '%s'.", tracking_stream_id)
+        singer.write_schema(
+            tracking_stream_id,
+            tracking_stream.schema.to_dict(),
+            tracking_stream.key_properties)
 
     for stream in catalog.streams:
         stream_id = stream.tap_stream_id
@@ -295,18 +302,11 @@ def sync(config, state, catalog):
                                 first_transformed_logged = True
                             singer.write_record(stream_id, transformed)
 
-                        # Tracking: for APPro shipments, fetch and emit tracking data
+                        # Tracking: for AP shipments, fetch and emit tracking data
                         if (stream_id == 'shipments' and tracking_selected and
                                 tracking_stream is not None):
                             shipment_number = record.get('shipment_number') or ''
-                            if shipment_number.startswith('APPro'):
-                                if not tracking_schema_written:
-                                    singer.write_schema(
-                                        tracking_stream_id,
-                                        tracking_stream.schema.to_dict(),
-                                        tracking_stream.key_properties)
-                                    tracking_schema_written = True
-
+                            if shipment_number.startswith('AP'):
                                 fetched_at = pendulum.now('UTC').to_iso8601_string()
                                 tracking_data = None
 
