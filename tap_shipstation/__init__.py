@@ -47,7 +47,7 @@ def get_abs_path(path):
 def load_schemas():
     # Read v2-supported schema files and return a dict keyed by stream name.
     # Explicitly filter out deprecated/legacy streams like 'orders'.
-    allowed_streams = {'shipments', 'fulfillments'}
+    allowed_streams = {'shipments', 'fulfillments', 'ap_shipment_tracking'}
     schemas = {}
     for filename in os.listdir(get_abs_path('schemas')):
         file_raw = filename.replace('.json', '')
@@ -68,7 +68,8 @@ def discover():
 
     keys = {
         'shipments': ['shipment_id'],
-        'fulfillments': ['fulfillment_id']
+        'fulfillments': ['fulfillment_id'],
+        'ap_shipment_tracking': ['shipment_id']
     }
 
     for schema_name, schema in raw_schemas.items():
@@ -110,19 +111,86 @@ def get_selected_streams(catalog):
     return selected_streams
 
 
+def _get_stream_from_catalog(catalog, stream_id):
+    """Helper to get a stream by id from catalog."""
+    for stream in catalog.streams:
+        if stream.tap_stream_id == stream_id:
+            return stream
+    return None
+
+
+def _build_tracking_record(shipment, tracking_data, fetched_at):
+    """Build a tracking record combining shipment and tracking API data."""
+    ship_to = shipment.get('ship_to') or {}
+
+    record = {
+        'shipment_id': shipment.get('shipment_id'),
+        'shipment_number': shipment.get('shipment_number'),
+        'label_id': tracking_data.get('label_id'),
+        'tracking_number': tracking_data.get('tracking_number'),
+        'carrier_code': tracking_data.get('carrier_code'),
+        'status_code': tracking_data.get('status_code'),
+        'status_description': tracking_data.get('status_description'),
+        'carrier_status_code': tracking_data.get('carrier_status_code'),
+        'carrier_status_description': tracking_data.get('carrier_status_description'),
+        'shipped_date': tracking_data.get('shipped_date'),
+        'estimated_delivery_date': tracking_data.get('estimated_delivery_date'),
+        'actual_delivery_date': tracking_data.get('actual_delivery_date'),
+        'exception_description': tracking_data.get('exception_description'),
+        'events': tracking_data.get('events', []),
+        'ship_to_name': ship_to.get('name'),
+        'ship_to_company_name': ship_to.get('company_name'),
+        'ship_to_email': ship_to.get('email'),
+        'ship_to_state_province': ship_to.get('state_province'),
+        'fetched_at': fetched_at
+    }
+    return record
+
+
+def _get_label_id_from_shipment(shipment):
+    """Extract label_id from shipment packages if available."""
+    packages = shipment.get('packages') or []
+    for pkg in packages:
+        label_id = pkg.get('label_id')
+        if label_id:
+            return label_id
+    return None
+
+
+def _get_tracking_info_from_shipment(shipment):
+    """Extract carrier_code and tracking_number from shipment packages."""
+    packages = shipment.get('packages') or []
+    for pkg in packages:
+        tracking = pkg.get('tracking_number')
+        if tracking:
+            carrier = shipment.get('carrier_id') or shipment.get('carrier_code')
+            return carrier, tracking
+    return None, None
+
+
 def sync(config, state, catalog):
     # Core extraction loop:
     # - Determine selected streams
     # - For each selected stream, compute start/end window
     # - Iterate day-by-day, paginate ShipStation API, transform, write records
     # - Persist bookmark at the end of each day
+    # - If ap_shipment_tracking is selected, fetch tracking for APPro shipments
     if isinstance(catalog, dict):
         catalog = Catalog.from_dict(catalog)
     selected_stream_ids = get_selected_streams(catalog)
 
+    tracking_stream_id = 'ap_shipment_tracking'
+    tracking_selected = tracking_stream_id in selected_stream_ids
+    tracking_schema_written = False
+    tracking_stream = _get_stream_from_catalog(catalog, tracking_stream_id)
+
     for stream in catalog.streams:
         stream_id = stream.tap_stream_id
         stream_schema = stream.schema
+
+        if stream_id == tracking_stream_id:
+            continue
+
         if stream_id not in selected_stream_ids:
             continue
 
@@ -226,6 +294,37 @@ def sync(config, state, catalog):
                                     LOGGER.info('Transformed sample available but failed to log keys for %s.', stream_id)
                                 first_transformed_logged = True
                             singer.write_record(stream_id, transformed)
+
+                        # Tracking: for APPro shipments, fetch and emit tracking data
+                        if (stream_id == 'shipments' and tracking_selected and
+                                tracking_stream is not None):
+                            shipment_number = record.get('shipment_number') or ''
+                            if shipment_number.startswith('AP'):
+                                if not tracking_schema_written:
+                                    singer.write_schema(
+                                        tracking_stream_id,
+                                        tracking_stream.schema.to_dict(),
+                                        tracking_stream.key_properties)
+                                    tracking_schema_written = True
+
+                                fetched_at = pendulum.now('UTC').to_iso8601_string()
+                                tracking_data = None
+
+                                label_id = _get_label_id_from_shipment(record)
+                                if label_id:
+                                    tracking_data = client.get_tracking_by_label(label_id)
+
+                                if not tracking_data:
+                                    carrier, tracking_num = _get_tracking_info_from_shipment(record)
+                                    if carrier and tracking_num:
+                                        tracking_data = client.get_tracking_by_number(carrier, tracking_num)
+
+                                if tracking_data:
+                                    tracking_record = _build_tracking_record(record, tracking_data, fetched_at)
+                                    singer.write_record(tracking_stream_id, tracking_record)
+                                else:
+                                    LOGGER.info('No tracking data available for shipment %s', shipment_number)
+
             except Exception as e:
                 LOGGER.error('Error processing stream %s with params %s: %s', stream_id, params, str(e))
                 continue
