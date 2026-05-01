@@ -27,7 +27,6 @@ discovery or sync process.
 import os
 import json
 import jsonref
-from datetime import timedelta
 import pendulum
 import singer
 from singer import utils, metadata
@@ -119,25 +118,31 @@ def _get_stream_from_catalog(catalog, stream_id):
     return None
 
 
-def _build_tracking_record(shipment, tracking_data, fetched_at):
-    """Build a tracking record combining shipment and tracking API data."""
-    ship_to = shipment.get('ship_to') or {}
+def _build_tracking_record_from_label(shipment, label, fetched_at):
+    """Build a tracking record from shipment data + label endpoint response."""
+    label_ship_to = label.get('ship_to') or {}
+    shipment_ship_to = shipment.get('ship_to') or {}
+    ship_to = label_ship_to or shipment_ship_to
+
+    tracking_status = label.get('tracking_status') or ''
+    is_delivered = tracking_status.lower() == 'delivered'
+    ship_date = label.get('ship_date') or shipment.get('ship_date')
 
     record = {
         'shipment_id': shipment.get('shipment_id'),
         'shipment_number': shipment.get('shipment_number'),
-        'label_id': tracking_data.get('label_id'),
-        'tracking_number': tracking_data.get('tracking_number'),
-        'carrier_code': tracking_data.get('carrier_code'),
-        'status_code': tracking_data.get('status_code'),
-        'status_description': tracking_data.get('status_description'),
-        'carrier_status_code': tracking_data.get('carrier_status_code'),
-        'carrier_status_description': tracking_data.get('carrier_status_description'),
-        'shipped_date': tracking_data.get('shipped_date'),
-        'estimated_delivery_date': tracking_data.get('estimated_delivery_date'),
-        'actual_delivery_date': tracking_data.get('actual_delivery_date'),
-        'exception_description': tracking_data.get('exception_description'),
-        'events': tracking_data.get('events', []),
+        'label_id': label.get('label_id'),
+        'tracking_number': label.get('tracking_number'),
+        'carrier_code': label.get('carrier_code'),
+        'status_code': 'DE' if is_delivered else tracking_status[:2].upper() if tracking_status else None,
+        'status_description': tracking_status,
+        'carrier_status_code': None,
+        'carrier_status_description': None,
+        'shipped_date': ship_date,
+        'estimated_delivery_date': None,
+        'actual_delivery_date': fetched_at if is_delivered else None,
+        'exception_description': None,
+        'events': [],
         'ship_to_name': ship_to.get('name'),
         'ship_to_company_name': ship_to.get('company_name'),
         'ship_to_email': ship_to.get('email'),
@@ -147,34 +152,13 @@ def _build_tracking_record(shipment, tracking_data, fetched_at):
     return record
 
 
-def _get_label_id_from_shipment(shipment):
-    """Extract label_id from shipment packages if available."""
-    packages = shipment.get('packages') or []
-    for pkg in packages:
-        label_id = pkg.get('label_id')
-        if label_id:
-            return label_id
-    return None
-
-
-def _get_tracking_info_from_shipment(shipment):
-    """Extract carrier_code and tracking_number from shipment packages."""
-    packages = shipment.get('packages') or []
-    for pkg in packages:
-        tracking = pkg.get('tracking_number')
-        if tracking:
-            carrier = shipment.get('carrier_id') or shipment.get('carrier_code')
-            return carrier, tracking
-    return None, None
-
-
-def sync(config, state, catalog):
+def sync(config, state, catalog):  # noqa: C901
     # Core extraction loop:
     # - Determine selected streams
     # - For each selected stream, compute start/end window
     # - Iterate day-by-day, paginate ShipStation API, transform, write records
     # - Persist bookmark at the end of each day
-    # - If ap_shipment_tracking is selected, fetch tracking for APPro shipments
+    # - If ap_shipment_tracking is selected, run a tracking sweep via labels endpoint
     if isinstance(catalog, dict):
         catalog = Catalog.from_dict(catalog)
     selected_stream_ids = get_selected_streams(catalog)
@@ -274,7 +258,7 @@ def sync(config, state, catalog):
                 first_transformed_logged = False
                 for page in pages:
                     for record in page:
-                        # For fulfillments, enforce a strict client-side window filter to avoid history dumps
+                        # Strict client-side window filter for fulfillments
                         if stream_id == 'fulfillments':
                             ts_str = record.get('created_at') or record.get('ship_date') or record.get('delivered_at')
                             try:
@@ -302,29 +286,6 @@ def sync(config, state, catalog):
                                 first_transformed_logged = True
                             singer.write_record(stream_id, transformed)
 
-                        # Tracking: for AP shipments, fetch and emit tracking data
-                        if (stream_id == 'shipments' and tracking_selected and
-                                tracking_stream is not None):
-                            shipment_number = record.get('shipment_number') or ''
-                            if shipment_number.startswith('AP'):
-                                fetched_at = pendulum.now('UTC').to_iso8601_string()
-                                tracking_data = None
-
-                                label_id = _get_label_id_from_shipment(record)
-                                if label_id:
-                                    tracking_data = client.get_tracking_by_label(label_id)
-
-                                if not tracking_data:
-                                    carrier, tracking_num = _get_tracking_info_from_shipment(record)
-                                    if carrier and tracking_num:
-                                        tracking_data = client.get_tracking_by_number(carrier, tracking_num)
-
-                                if tracking_data:
-                                    tracking_record = _build_tracking_record(record, tracking_data, fetched_at)
-                                    singer.write_record(tracking_stream_id, tracking_record)
-                                else:
-                                    LOGGER.info('No tracking data available for shipment %s', shipment_number)
-
             except Exception as e:
                 LOGGER.error('Error processing stream %s with params %s: %s', stream_id, params, str(e))
                 continue
@@ -338,6 +299,66 @@ def sync(config, state, catalog):
             start_at = end_at
 
         LOGGER.info("Finished syncing stream '%s'.", stream_id)
+
+    # Tracking sweep: iterate AP shipments from the last 14 days, then call
+    # /v2/labels?shipment_id=... per shipment to get tracking_number,
+    # tracking_status, carrier_code, and ship_to from the label data.
+    if tracking_selected and tracking_stream is not None:
+        LOGGER.info('Starting AP shipment tracking sweep (last 14 days).')
+        tracking_client = ShipStationClient(config)
+        sweep_end = pendulum.now('America/Los_Angeles')
+        sweep_start = sweep_end.subtract(days=14)
+
+        day_start = sweep_start
+        emitted_count = 0
+        while day_start < sweep_end:
+            day_end = min(day_start.add(days=1), sweep_end)
+            params = {
+                'created_at_start': day_start.strftime('%Y-%m-%d'),
+                'created_at_end': day_end.strftime('%Y-%m-%d'),
+                'page': 1
+            }
+            try:
+                for page in tracking_client.paginate('shipments', params):
+                    for record in page:
+                        shipment_number = record.get('shipment_number') or ''
+                        if not shipment_number.startswith('AP'):
+                            continue
+
+                        shipment_id = record.get('shipment_id')
+                        if not shipment_id:
+                            continue
+
+                        label = tracking_client.get_labels_for_shipment(shipment_id)
+                        if not label:
+                            LOGGER.info(
+                                'No label found for AP shipment %s',
+                                shipment_number)
+                            continue
+
+                        fetched_at = pendulum.now('UTC').to_iso8601_string()
+                        tracking_record = _build_tracking_record_from_label(
+                            record, label, fetched_at)
+                        singer.write_record(tracking_stream_id, tracking_record)
+                        emitted_count += 1
+
+                        tracking_status = label.get('tracking_status', '')
+                        LOGGER.info(
+                            'AP shipment %s: tracking_status=%s, tracking=%s',
+                            shipment_number,
+                            tracking_status,
+                            label.get('tracking_number'))
+            except Exception as e:
+                LOGGER.error(
+                    'Tracking sweep error for %s: %s',
+                    day_start.strftime('%Y-%m-%d'),
+                    str(e))
+
+            day_start = day_end
+
+        LOGGER.info(
+            'Completed AP shipment tracking sweep. Emitted %s records.',
+            emitted_count)
 
 
 @utils.handle_top_exception(LOGGER)
