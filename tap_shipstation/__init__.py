@@ -68,7 +68,7 @@ def discover():
     keys = {
         'shipments': ['shipment_id'],
         'fulfillments': ['fulfillment_id'],
-        'ap_shipment_tracking': ['shipment_id']
+        'ap_shipment_tracking': ['shipment_id', 'fetched_at']
     }
 
     for schema_name, schema in raw_schemas.items():
