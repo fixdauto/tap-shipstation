@@ -300,17 +300,29 @@ def sync(config, state, catalog):  # noqa: C901
 
         LOGGER.info("Finished syncing stream '%s'.", stream_id)
 
-    # Tracking sweep: iterate AP shipments from the last 14 days, then call
+    # Tracking sweep: iterate AP shipments from the last 20 days, then call
     # /v2/labels?shipment_id=... per shipment to get tracking_number,
     # tracking_status, carrier_code, and ship_to from the label data.
+    # Shipments already known to be delivered (tracked in Singer state) are
+    # skipped to avoid emitting duplicate "still delivered" rows on every run.
     if tracking_selected and tracking_stream is not None:
-        LOGGER.info('Starting AP shipment tracking sweep (last 14 days).')
+        LOGGER.info('Starting AP shipment tracking sweep (last 20 days).')
         tracking_client = ShipStationClient(config)
         sweep_end = pendulum.now('America/Los_Angeles')
-        sweep_start = sweep_end.subtract(days=14)
+        sweep_start = sweep_end.subtract(days=20)
+
+        delivered_ids_list = singer.get_bookmark(
+            state=state,
+            tap_stream_id=tracking_stream_id,
+            key='delivered_shipment_ids') or []
+        delivered_shipment_ids = set(delivered_ids_list)
+        LOGGER.info(
+            'Loaded %s delivered shipment_ids from state',
+            len(delivered_shipment_ids))
 
         day_start = sweep_start
         emitted_count = 0
+        skipped_count = 0
         while day_start < sweep_end:
             day_end = min(day_start.add(days=1), sweep_end)
             params = {
@@ -329,6 +341,10 @@ def sync(config, state, catalog):  # noqa: C901
                         if not shipment_id:
                             continue
 
+                        if shipment_id in delivered_shipment_ids:
+                            skipped_count += 1
+                            continue
+
                         label = tracking_client.get_labels_for_shipment(shipment_id)
                         if not label:
                             LOGGER.info(
@@ -342,7 +358,10 @@ def sync(config, state, catalog):  # noqa: C901
                         singer.write_record(tracking_stream_id, tracking_record)
                         emitted_count += 1
 
-                        tracking_status = label.get('tracking_status', '')
+                        tracking_status = label.get('tracking_status') or ''
+                        if tracking_status.lower() == 'delivered':
+                            delivered_shipment_ids.add(shipment_id)
+
                         LOGGER.info(
                             'AP shipment %s: tracking_status=%s, tracking=%s',
                             shipment_number,
@@ -356,9 +375,20 @@ def sync(config, state, catalog):  # noqa: C901
 
             day_start = day_end
 
+        state = singer.write_bookmark(
+            state=state,
+            tap_stream_id=tracking_stream_id,
+            key='delivered_shipment_ids',
+            val=sorted(delivered_shipment_ids))
+        singer.write_state(state)
+
         LOGGER.info(
-            'Completed AP shipment tracking sweep. Emitted %s records.',
-            emitted_count)
+            'Completed AP shipment tracking sweep. Emitted %s records, '
+            'skipped %s already-delivered shipments. State now tracks %s '
+            'delivered shipment_ids.',
+            emitted_count,
+            skipped_count,
+            len(delivered_shipment_ids))
 
 
 @utils.handle_top_exception(LOGGER)
